@@ -1,47 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Next.js + TypeScript + Anime.js (60FPS Architecture) 🚀
 
-## Getting Started
+This is a high-performance boilerplate template for building modern web applications using **Next.js (App Router)**, **TypeScript**, **Tailwind CSS**, and **Anime.js (v4)**.
 
-First, run the development server:
+Designed with strict Web Vitals and 60FPS animation principles in mind.
+
+## 🌟 Key Features
+
+- **Strict 60FPS Animations**: Only animates GPU-accelerated properties (`transform` and `opacity`) using Anime.js v4.
+- **Main Thread Protection**: Follows architectural best practices to prevent blocking the main thread.
+- **Hydration Safe**: Configured to prevent React hydration errors gracefully, even with browser extensions.
+- **Tailwind Strict Mode**: Avoids `transition-all` and costly repaints by strictly transitioning necessary properties.
+- **Pre-configured Folder Structure**: Includes `components/ui`, `components/layout`, `hooks`, `types`, and `lib` directories.
+
+## 📁 Project Structure
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+src/
+├── app/             # Next.js App Router (pages, layout, globals.css)
+├── components/      
+│   ├── layout/      # Layout components (Header, Footer, etc.)
+│   └── ui/          # Reusable UI components
+├── hooks/           # Custom React hooks
+├── lib/             # Shared utilities and configurations
+├── types/           # Global TypeScript definitions
+└── utils/           
+    └── anime-runner.ts # Anime.js animation wrappers
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🚀 Getting Started
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. **Install dependencies:**
+   ```bash
+   npm install
+   # or
+   pnpm install
+   # or
+   yarn install
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2. **Run the development server:**
+   ```bash
+   npm run dev
+   ```
 
-## Learn More
+3. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result. The main page includes a test component showcasing a strictly composed 60FPS GPU-accelerated animation using Anime.js.
 
-To learn more about Next.js, take a look at the following resources:
+## 🛠️ Performance Directives
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+If you intend to use this template, please adhere to these rendering and animation rules:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Reflows vs Repaints**: NEVER animate layout properties like `width`, `height`, `top`, `left`, `margin`, or `padding`. Always use `transform` (`scale`, `translate`) and `opacity`.
+- **GPU Acceleration**: Make use of Tailwind's `transform-gpu` and `will-change-*` utility classes for frequently animated elements.
+- **Code-Splitting**: Load heavy components dynamically via `next/dynamic` or `React.lazy()` to protect the main thread and achieve a fast LCP (Largest Contentful Paint).
 
-## Deploy on Vercel
+## 📄 License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## Docker
-
-To create the Docker image for production run:
-`docker build -t nextjs-first-steps .`
-
-To run the Docker production run:
-`docker container run -dp 3000:3000 nextjs-first-steps`
-
-Open a browser the url:
-`http://localhost:3000`
+MIT License. Feel free to use this boilerplate for your projects!
