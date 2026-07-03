@@ -2,25 +2,67 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+.material-symbols-outlined {
+	font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+	user-select: none;
+	font-size: 24px;
+	line-height: 1;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: #c1c8ca;
+	border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: #71787b;
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    rgb(var(--background-end-rgb))
-  ) rgb(var(--background-start-rgb));
+/* ── 404 illustration ───────────────────────────────────────────────── */
+#handboy {
+	animation: swing ease-in-out 1.3s infinite alternate;
+	transform-origin: 98% 98%;
+	transform-box: fill-box;
+}
+
+#girllight {
+	animation: swing ease-in-out 1.3s infinite alternate;
+	transform-origin: 0% 97%;
+	transform-box: fill-box;
+}
+
+#hairgirl {
+	animation: swinghair ease-in-out 1.3s infinite alternate;
+	transform-origin: 60% 0%;
+	transform-box: fill-box;
+}
+
+#zero {
+	transform-origin: bottom;
+	transform-box: fill-box;
+	will-change: transform;
+}
+
+@keyframes swing {
+	0% { transform: rotate(10deg); }
+	100% { transform: rotate(-10deg); }
+}
+
+@keyframes swinghair {
+	0% { transform: rotate(6deg); }
+	100% { transform: rotate(-6deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#handboy,
+	#girllight,
+	#hairgirl {
+		animation: none;
+	}
 }

@@ -42,3 +42,8 @@ next-env.d.ts
 
 #webstorm
 .idea/
+
+# local tooling
+/.agents/
+/.impeccable/
+skills-lock.json

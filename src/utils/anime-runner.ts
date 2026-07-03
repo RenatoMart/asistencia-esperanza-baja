@@ -1,4 +1,3 @@
-// src/utils/anime-runner.ts
 import { animate } from 'animejs';
 
 export const runEntranceAnimation = (
@@ -39,3 +38,32 @@ export const runHoverAnimation = (
 		ease: 'outQuad',
 	});
 };
+
+export function run404Animations(container: HTMLElement): () => void {
+	const svgEl = container.querySelector<SVGSVGElement>('svg');
+	const zeroEl = container.querySelector<Element>('#zero');
+
+	if (!svgEl || !zeroEl) return () => {};
+
+	const floatAnim = animate(svgEl, {
+		y: [0, 10],
+		loop: true,
+		ease: 'inOutSine',
+		direction: 'alternate',
+		duration: 1300,
+	});
+
+	const zeroAnim = animate(zeroEl, {
+		x: [0, 10],
+		scale: [1, 1.35, 1],
+		loop: true,
+		ease: 'inOutSine',
+		direction: 'alternate',
+		duration: 2000,
+	});
+
+	return () => {
+		floatAnim.pause();
+		zeroAnim.pause();
+	};
+}
