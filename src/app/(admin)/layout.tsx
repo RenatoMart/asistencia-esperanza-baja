@@ -6,16 +6,20 @@ import { ConvertidosProvider } from '@/lib/convertidos-store';
 import { MiembrosProvider } from '@/lib/miembros-store';
 import { VisitasProvider } from '@/lib/visitas-store';
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({
+	children,
+}: {
+	children: React.ReactNode;
+}) {
 	return (
 		<MiembrosProvider>
 			<ConvertidosProvider>
 				<VisitasProvider>
 					<div className='flex h-screen overflow-hidden bg-background text-on-background'>
 						<Sidebar />
-						<div className='flex-1 flex flex-col md:ml-64 h-screen overflow-hidden'>
+						<div className='flex h-screen min-w-0 flex-1 flex-col overflow-hidden md:ml-64'>
 							<TopBar />
-							<div className='flex-1 overflow-y-auto pb-16 md:pb-0'>
+							<div className='flex-1 overflow-y-auto overflow-x-hidden pb-16 md:pb-0'>
 								{children}
 								<Footer />
 							</div>

@@ -1,44 +1,44 @@
 'use client';
 
+import MobileMenu from '@/components/layout/MobileMenu';
+
 export default function TopBar() {
 	return (
-		<header className='sticky top-0 z-50 flex justify-between items-center w-full px-4 md:px-margin-desktop h-16 bg-surface border-b border-outline-variant shrink-0'>
-			<div className='flex items-center gap-4 flex-1'>
-				<button className='md:hidden text-on-surface-variant hover:bg-surface-container transition-[background-color] p-2 rounded-full'>
-					<span className='material-symbols-outlined'>menu</span>
-				</button>
-				<span className='md:hidden font-headline-md text-headline-md font-bold text-primary'>
+		<header className='sticky top-0 z-50 flex h-16 w-full shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-4 md:px-margin-desktop'>
+			<div className='flex min-w-0 flex-1 items-center gap-4'>
+				<MobileMenu />
+				<span className='font-headline-md text-headline-md font-bold text-primary md:hidden'>
 					IDP
 				</span>
-				<span className='hidden md:block font-headline-md text-headline-md font-bold text-primary'>
+				<span className='hidden font-headline-md text-headline-md font-bold text-primary md:block'>
 					IDP
 				</span>
-				<div className='hidden md:flex relative max-w-sm w-full ml-4'>
+				<div className='relative ml-4 hidden w-full max-w-sm md:flex'>
 					<span className='material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant'>
 						search
 					</span>
 					<input
 						type='text'
 						placeholder='Buscar...'
-						className='w-full pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-full font-body-sm text-body-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-[box-shadow]'
+						className='w-full rounded-full border border-outline-variant bg-surface-container-low py-2 pl-10 pr-4 font-body-sm text-body-sm transition-[box-shadow] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary'
 					/>
 				</div>
 			</div>
 
 			<div className='flex items-center gap-1'>
-				<button className='hidden md:block px-4 py-2 border border-primary text-primary rounded-full font-label-md text-label-md hover:bg-surface-container transition-[background-color] mr-2'>
+				<button className='mr-2 hidden rounded-full border border-primary px-4 py-2 font-label-md text-label-md text-primary transition-[background-color] hover:bg-surface-container md:block'>
 					Registrar Asistencia
 				</button>
-				<button className='hidden md:block px-4 py-2 bg-primary text-on-primary rounded-full font-label-md text-label-md hover:opacity-90 transition-[opacity] mr-2'>
+				<button className='mr-2 hidden rounded-full bg-primary px-4 py-2 font-label-md text-label-md text-on-primary transition-[opacity] hover:opacity-90 md:block'>
 					Añadir Evento
 				</button>
-				<button className='text-on-surface-variant hover:bg-surface-container transition-[background-color] p-2 rounded-full'>
+				<button className='rounded-full p-2 text-on-surface-variant transition-[background-color] hover:bg-surface-container'>
 					<span className='material-symbols-outlined'>notifications</span>
 				</button>
-				<button className='hidden sm:block text-on-surface-variant hover:bg-surface-container transition-[background-color] p-2 rounded-full'>
+				<button className='hidden rounded-full p-2 text-on-surface-variant transition-[background-color] hover:bg-surface-container sm:block'>
 					<span className='material-symbols-outlined'>settings</span>
 				</button>
-				<div className='w-8 h-8 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xs ml-2 cursor-pointer border border-outline-variant select-none'>
+				<div className='ml-2 flex h-8 w-8 cursor-pointer select-none items-center justify-center rounded-full border border-outline-variant bg-secondary-container text-xs font-bold text-on-secondary-container'>
 					AM
 				</div>
 			</div>
