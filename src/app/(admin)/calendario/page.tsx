@@ -5,6 +5,23 @@ import { useState } from 'react';
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const DAY_NAMES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 
+// Días de la semana (0=Dom…6=Sáb) que ocurren dentro del rango [startIso, endIso].
+function weekdaysInRange(startIso: string, endIso: string): Set<number> {
+	const set = new Set<number>();
+	if (!startIso || !endIso) return set;
+	const start = new Date(`${startIso}T00:00:00`);
+	const end = new Date(`${endIso}T00:00:00`);
+	if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+		return set;
+	}
+	const cursor = new Date(start);
+	while (cursor <= end && set.size < 7) {
+		set.add(cursor.getDay());
+		cursor.setDate(cursor.getDate() + 1);
+	}
+	return set;
+}
+
 interface Chip { label: string; color: string }
 
 // Recurring events by JS day-of-week (0=Sun…6=Sat)
@@ -26,9 +43,14 @@ const FIRST_SUNDAY_LABEL = 'Mayordomía → Culto C.';
 interface CustomEvent {
 	id: number;
 	day: number;
+	month: number;
+	year: number;
 	title: string;
 	eventType: string;
 	ministry: string;
+	time: string;
+	location: string;
+	notes: string;
 }
 
 const EVENT_TYPE_COLOR: Record<string, string> = {
@@ -62,9 +84,22 @@ export default function CalendarioPage() {
 	const [showSchedule, setShowSchedule] = useState(false);
 	const [customEvents, setCustomEvents] = useState<CustomEvent[]>([]);
 	const [nextId, setNextId] = useState(1);
+	// id del evento en edición; null = creando uno nuevo.
+	const [editingId, setEditingId] = useState<number | null>(null);
 
-	// form state
-	const [form, setForm] = useState({ title: '', date: '', time: '', eventType: 'culto', ministry: '', location: '', notes: '' });
+	// form state (startDate/endDate/weekDays solo aplican a "Semana Especial")
+	const [form, setForm] = useState({
+		title: '',
+		date: '',
+		time: '',
+		eventType: 'culto',
+		ministry: '',
+		location: '',
+		notes: '',
+		startDate: '',
+		endDate: '',
+		weekDays: [] as number[],
+	});
 
 	const year = viewDate.getFullYear();
 	const month = viewDate.getMonth();
@@ -88,23 +123,172 @@ export default function CalendarioPage() {
 		return chips;
 	};
 
+	const monthEvents = customEvents
+		.filter((e) => e.month === month && e.year === year)
+		.sort((a, b) => a.day - b.day);
+
 	const getCustom = (dayNum: number) =>
-		customEvents.filter((e) => e.day === dayNum);
+		customEvents.filter((e) => e.day === dayNum && e.month === month && e.year === year);
+
+	const resetForm = () =>
+		setForm({
+			title: '',
+			date: '',
+			time: '',
+			eventType: 'culto',
+			ministry: '',
+			location: '',
+			notes: '',
+			startDate: '',
+			endDate: '',
+			weekDays: [],
+		});
+
+	// Días de la semana disponibles según el rango elegido.
+	const availableDows = weekdaysInRange(form.startDate, form.endDate);
+
+	// Al cambiar inicio/cierre, se recalculan los días válidos y se descartan los
+	// seleccionados que ya no caen dentro del nuevo rango.
+	const setRange = (patch: { startDate?: string; endDate?: string }) =>
+		setForm((f) => {
+			const next = { ...f, ...patch };
+			const valid = weekdaysInRange(next.startDate, next.endDate);
+			return { ...next, weekDays: next.weekDays.filter((d) => valid.has(d)) };
+		});
+
+	const toggleWeekDay = (dow: number) => {
+		if (!availableDows.has(dow)) return;
+		setForm((f) => ({
+			...f,
+			weekDays: f.weekDays.includes(dow)
+				? f.weekDays.filter((d) => d !== dow)
+				: [...f.weekDays, dow],
+		}));
+	};
+
+	const closeModal = () => {
+		setIsModalOpen(false);
+		setEditingId(null);
+		resetForm();
+	};
+
+	// Abrir el modal para crear un evento nuevo (opcionalmente con fecha prefijada).
+	const openNew = (dateIso?: string) => {
+		resetForm();
+		setEditingId(null);
+		if (dateIso) setForm((f) => ({ ...f, date: dateIso }));
+		setIsModalOpen(true);
+	};
+
+	// Abrir el modal para editar un evento existente (una sola ocurrencia).
+	const openEdit = (ev: CustomEvent) => {
+		const dateIso = `${ev.year}-${String(ev.month + 1).padStart(2, '0')}-${String(ev.day).padStart(2, '0')}`;
+		setForm({
+			title: ev.title,
+			date: dateIso,
+			time: ev.time,
+			eventType: ev.eventType,
+			ministry: ev.ministry,
+			location: ev.location,
+			notes: ev.notes,
+			startDate: '',
+			endDate: '',
+			weekDays: [],
+		});
+		setEditingId(ev.id);
+		setIsModalOpen(true);
+	};
+
+	const deleteEvent = (id: number) => {
+		setCustomEvents((prev) => prev.filter((e) => e.id !== id));
+		if (editingId === id) closeModal();
+	};
 
 	const saveEvent = () => {
-		if (!form.title || !form.date) return;
-		const d = new Date(form.date);
-		if (d.getFullYear() !== year || d.getMonth() !== month) {
-			setIsModalOpen(false);
+		if (!form.title) return;
+
+		// Edición: siempre una sola ocurrencia (día concreto).
+		if (editingId !== null) {
+			if (!form.date) return;
+			const d = new Date(`${form.date}T00:00:00`);
+			if (Number.isNaN(d.getTime())) return;
+			setCustomEvents((prev) =>
+				prev.map((e) =>
+					e.id === editingId
+						? {
+								...e,
+								day: d.getDate(),
+								month: d.getMonth(),
+								year: d.getFullYear(),
+								title: form.title,
+								eventType: form.eventType,
+								ministry: form.ministry,
+								time: form.time,
+								location: form.location,
+								notes: form.notes,
+							}
+						: e,
+				),
+			);
+			closeModal();
 			return;
 		}
+
+		if (form.eventType === 'semana') {
+			// Semana especial: repartir el evento en los días seleccionados del rango.
+			if (!form.startDate || !form.endDate || form.weekDays.length === 0) return;
+			const start = new Date(`${form.startDate}T00:00:00`);
+			const end = new Date(`${form.endDate}T00:00:00`);
+			if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return;
+
+			const newEvents: CustomEvent[] = [];
+			let id = nextId;
+			const cursor = new Date(start);
+			while (cursor <= end) {
+				if (form.weekDays.includes(cursor.getDay())) {
+					newEvents.push({
+						id: id++,
+						day: cursor.getDate(),
+						month: cursor.getMonth(),
+						year: cursor.getFullYear(),
+						title: form.title,
+						eventType: 'semana',
+						ministry: form.ministry,
+						time: form.time,
+						location: form.location,
+						notes: form.notes,
+					});
+				}
+				cursor.setDate(cursor.getDate() + 1);
+			}
+			if (newEvents.length === 0) return;
+			setCustomEvents((prev) => [...prev, ...newEvents]);
+			setNextId(id);
+			closeModal();
+			return;
+		}
+
+		// Evento de un solo día.
+		if (!form.date) return;
+		const d = new Date(`${form.date}T00:00:00`);
+		if (Number.isNaN(d.getTime())) return;
 		setCustomEvents((prev) => [
 			...prev,
-			{ id: nextId, day: d.getDate(), title: form.title, eventType: form.eventType, ministry: form.ministry },
+			{
+				id: nextId,
+				day: d.getDate(),
+				month: d.getMonth(),
+				year: d.getFullYear(),
+				title: form.title,
+				eventType: form.eventType,
+				ministry: form.ministry,
+				time: form.time,
+				location: form.location,
+				notes: form.notes,
+			},
 		]);
 		setNextId((n) => n + 1);
-		setForm({ title: '', date: '', time: '', eventType: 'culto', ministry: '', location: '', notes: '' });
-		setIsModalOpen(false);
+		closeModal();
 	};
 
 	return (
@@ -181,7 +365,7 @@ export default function CalendarioPage() {
 								return (
 									<div
 										key={i}
-										onClick={() => { if (inMonth) { setForm((f) => ({ ...f, date: `${year}-${String(month + 1).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}` })); setIsModalOpen(true); } }}
+										onClick={() => { if (inMonth) openNew(`${year}-${String(month + 1).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}`); }}
 										className={`p-1.5 flex flex-col group cursor-pointer transition-[background-color] ${inMonth ? 'bg-white hover:bg-surface-container-low' : 'bg-surface-bright opacity-40'}`}
 									>
 										<span className='flex justify-between items-center mb-1'>
@@ -198,7 +382,15 @@ export default function CalendarioPage() {
 											<div key={ei} className={`${ev.color} font-label-sm px-1 py-0.5 rounded mb-0.5 truncate text-[10px] leading-tight`}>{ev.label}</div>
 										))}
 										{custom.map((ev) => (
-											<div key={ev.id} className={`${EVENT_TYPE_COLOR[ev.eventType] ?? 'bg-surface-container text-on-surface'} font-label-sm px-1 py-0.5 rounded mb-0.5 truncate text-[10px] leading-tight`}>{ev.title}</div>
+											<button
+												key={ev.id}
+												type='button'
+												onClick={(e) => { e.stopPropagation(); openEdit(ev); }}
+												title={`Editar: ${ev.title}`}
+												className={`${EVENT_TYPE_COLOR[ev.eventType] ?? 'bg-surface-container text-on-surface'} w-full text-left font-label-sm px-1 py-0.5 rounded mb-0.5 truncate text-[10px] leading-tight hover:opacity-80 transition-[opacity]`}
+											>
+												{ev.title}
+											</button>
 										))}
 									</div>
 								);
@@ -231,14 +423,39 @@ export default function CalendarioPage() {
 						{/* Upcoming events */}
 						<div className='bg-white rounded-xl border border-outline-variant p-5 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex-1'>
 							<h3 className='font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-3'>Próximos Especiales</h3>
-							{customEvents.length === 0 ? (
+							{monthEvents.length === 0 ? (
 								<p className='font-body-sm text-body-sm text-on-surface-variant text-center py-4'>Sin eventos especiales registrados este mes.</p>
 							) : (
 								<div className='space-y-3'>
-									{customEvents.map((ev) => (
-										<div key={ev.id} className={`p-3 rounded-lg ${EVENT_TYPE_COLOR[ev.eventType] ?? ''}`}>
-											<p className='font-label-md text-label-md'>{ev.title}</p>
-											<p className='font-body-sm text-body-sm opacity-80'>Día {ev.day} · {ev.ministry || 'General'}</p>
+									{monthEvents.map((ev) => (
+										<div key={ev.id} className={`p-3 rounded-lg flex items-start gap-2 ${EVENT_TYPE_COLOR[ev.eventType] ?? ''}`}>
+											<button
+												type='button'
+												onClick={() => openEdit(ev)}
+												className='flex-1 text-left min-w-0 hover:opacity-80 transition-[opacity]'
+												title='Editar evento'
+											>
+												<p className='font-label-md text-label-md truncate'>{ev.title}</p>
+												<p className='font-body-sm text-body-sm opacity-80'>Día {ev.day} · {ev.ministry || 'General'}</p>
+											</button>
+											<div className='flex items-center gap-0.5 shrink-0'>
+												<button
+													type='button'
+													onClick={() => openEdit(ev)}
+													title='Editar'
+													className='p-1 rounded hover:bg-black/10 transition-[background-color]'
+												>
+													<span className='material-symbols-outlined text-[18px]'>edit</span>
+												</button>
+												<button
+													type='button'
+													onClick={() => deleteEvent(ev.id)}
+													title='Eliminar'
+													className='p-1 rounded hover:bg-black/10 transition-[background-color]'
+												>
+													<span className='material-symbols-outlined text-[18px]'>delete</span>
+												</button>
+											</div>
 										</div>
 									))}
 								</div>
@@ -247,7 +464,7 @@ export default function CalendarioPage() {
 
 						{/* Add event */}
 						<button
-							onClick={() => setIsModalOpen(true)}
+							onClick={() => openNew()}
 							className='w-full py-3 bg-primary text-on-primary rounded-xl font-label-md text-label-md hover:opacity-90 transition-[opacity] flex items-center justify-center gap-2 shadow-sm'
 						>
 							<span className='material-symbols-outlined' style={{ fontVariationSettings: "'FILL' 1" }}>add</span>
@@ -259,11 +476,11 @@ export default function CalendarioPage() {
 
 			{/* Add Event Modal */}
 			{isModalOpen && (
-				<div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4' onClick={(e) => e.target === e.currentTarget && setIsModalOpen(false)}>
-					<div className='bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] w-full max-w-lg flex flex-col overflow-hidden'>
+				<div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4' onClick={(e) => e.target === e.currentTarget && closeModal()}>
+					<div className='bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden'>
 						<div className='flex items-center justify-between p-6 border-b border-outline-variant bg-surface-bright'>
-							<h2 className='font-headline-md text-on-surface'>Crear Nuevo Evento</h2>
-							<button onClick={() => setIsModalOpen(false)} className='p-2 rounded-full hover:bg-surface-container transition-[background-color] text-on-surface-variant'>
+							<h2 className='font-headline-md text-on-surface'>{editingId !== null ? 'Editar Evento' : 'Crear Nuevo Evento'}</h2>
+							<button onClick={closeModal} className='p-2 rounded-full hover:bg-surface-container transition-[background-color] text-on-surface-variant'>
 								<span className='material-symbols-outlined'>close</span>
 							</button>
 						</div>
@@ -274,7 +491,18 @@ export default function CalendarioPage() {
 									{[['culto','Culto'],['vigilia','Vigilia'],['ayuno','Ayuno'],['equipo','Reunión Equipo'],['gdc','GDC Especial'],['semana','Sem. Especial']].map(([k,l]) => (
 										<button
 											key={k}
-											onClick={() => setForm((f) => ({ ...f, eventType: k }))}
+											onClick={() =>
+												setForm((f) =>
+													k === 'semana'
+														? {
+																...f,
+																eventType: k,
+																startDate: f.startDate || f.date,
+																endDate: f.endDate || f.date,
+															}
+														: { ...f, eventType: k },
+												)
+											}
 											className={`px-3 py-2 rounded-lg font-label-sm text-label-sm border transition-[background-color,border-color] ${form.eventType === k ? `${EVENT_TYPE_COLOR[k]} border-transparent` : 'border-outline-variant text-on-surface-variant hover:bg-surface-container'}`}
 										>
 											{l}
@@ -286,16 +514,67 @@ export default function CalendarioPage() {
 								<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Título</label>
 								<input type='text' value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder='ej. Vigilia de Oración Jóvenes' className='w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
 							</div>
-							<div className='grid grid-cols-2 gap-4'>
-								<div>
-									<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Fecha</label>
-									<input type='date' value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className='w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+							{form.eventType === 'semana' && editingId === null ? (
+								<>
+									<div className='grid grid-cols-2 gap-4'>
+										<div>
+											<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Fecha de inicio</label>
+											<input type='date' value={form.startDate} onChange={(e) => setRange({ startDate: e.target.value })} className='w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+										</div>
+										<div>
+											<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Fecha de cierre</label>
+											<input type='date' value={form.endDate} min={form.startDate || undefined} onChange={(e) => setRange({ endDate: e.target.value })} className='w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+										</div>
+									</div>
+									<div>
+										<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Días de la semana</label>
+										<div className='flex flex-wrap gap-2'>
+											{DAY_NAMES.map((name, dow) => {
+												const selected = form.weekDays.includes(dow);
+												const available = availableDows.has(dow);
+												return (
+													<button
+														key={dow}
+														type='button'
+														disabled={!available}
+														onClick={() => toggleWeekDay(dow)}
+														aria-pressed={selected}
+														className={`w-11 h-11 rounded-full font-label-sm text-label-sm border transition-[background-color,border-color] ${
+															selected
+																? 'bg-primary text-on-primary border-primary'
+																: available
+																	? 'border-outline-variant text-on-surface-variant hover:bg-surface-container'
+																	: 'border-outline-variant/40 text-on-surface-variant/40 cursor-not-allowed'
+														}`}
+													>
+														{name}
+													</button>
+												);
+											})}
+										</div>
+										<p className='font-body-sm text-body-sm text-on-surface-variant mt-1.5'>
+											{availableDows.size === 0
+												? 'Selecciona primero la fecha de inicio y de cierre.'
+												: 'Solo se muestran los días que caen dentro del rango. El evento se repetirá esos días.'}
+										</p>
+									</div>
+									<div>
+										<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Hora</label>
+										<input type='time' value={form.time} onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))} className='w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+									</div>
+								</>
+							) : (
+								<div className='grid grid-cols-2 gap-4'>
+									<div>
+										<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Fecha</label>
+										<input type='date' value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className='w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+									</div>
+									<div>
+										<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Hora</label>
+										<input type='time' value={form.time} onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))} className='w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+									</div>
 								</div>
-								<div>
-									<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Hora</label>
-									<input type='time' value={form.time} onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))} className='w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
-								</div>
-							</div>
+							)}
 							<div>
 								<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Ministerio Responsable</label>
 								<div className='relative'>
@@ -315,12 +594,21 @@ export default function CalendarioPage() {
 								<textarea rows={2} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder='Detalles adicionales...' className='w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none transition-[box-shadow]' />
 							</div>
 						</div>
-						<div className='p-6 border-t border-outline-variant bg-surface-bright flex justify-end gap-3'>
-							<button onClick={() => setIsModalOpen(false)} className='px-5 py-2 rounded-lg font-label-md text-label-md text-primary border border-outline-variant hover:bg-surface-container transition-[background-color]'>
+						<div className='p-6 border-t border-outline-variant bg-surface-bright flex items-center justify-end gap-3'>
+							{editingId !== null && (
+								<button
+									onClick={() => deleteEvent(editingId)}
+									className='mr-auto flex items-center gap-2 px-5 py-2 rounded-lg font-label-md text-label-md text-error border border-error/40 hover:bg-error-container/30 transition-[background-color]'
+								>
+									<span className='material-symbols-outlined text-[18px]'>delete</span>
+									Eliminar
+								</button>
+							)}
+							<button onClick={closeModal} className='px-5 py-2 rounded-lg font-label-md text-label-md text-primary border border-outline-variant hover:bg-surface-container transition-[background-color]'>
 								Cancelar
 							</button>
 							<button onClick={saveEvent} className='px-5 py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:opacity-90 transition-[opacity] shadow-sm'>
-								Guardar Evento
+								{editingId !== null ? 'Guardar Cambios' : 'Guardar Evento'}
 							</button>
 						</div>
 					</div>

@@ -7,6 +7,8 @@ const navLinks = [
 	{ href: '/dashboard', label: 'Panel de Control', icon: 'dashboard' },
 	{ href: '/ministerios', label: 'Ministerios', icon: 'groups' },
 	{ href: '/asistencia', label: 'Asistencia', icon: 'how_to_reg' },
+	{ href: '/visitas', label: 'Visitas', icon: 'waving_hand' },
+	{ href: '/convertidos', label: 'Convertidos', icon: 'volunteer_activism' },
 	{ href: '/miembros', label: 'Miembros', icon: 'person_search' },
 	{ href: '/calendario', label: 'Calendario', icon: 'calendar_month' },
 ];
@@ -35,7 +37,8 @@ export default function Sidebar() {
 
 			<ul className='flex flex-col gap-1 flex-grow'>
 				{navLinks.map((link) => {
-					const isActive = pathname === link.href;
+					const isActive =
+						pathname === link.href || pathname.startsWith(`${link.href}/`);
 					return (
 						<li key={link.href}>
 							<Link

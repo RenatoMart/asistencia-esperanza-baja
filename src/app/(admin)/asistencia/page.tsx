@@ -1,6 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
+
+import { useConvertidos } from '@/lib/convertidos-store';
+import { useVisitas } from '@/lib/visitas-store';
 
 type AttStatus = 'present' | 'absent' | 'excused';
 type Section = 'lider' | 'equipo' | 'congregante';
@@ -21,6 +25,14 @@ interface VisitForm {
 	email: string;
 	invitedBy: string;
 	ministryInterest: string;
+	notes: string;
+}
+
+interface ConvertForm {
+	fullName: string;
+	age: string;
+	phone: string;
+	address: string;
 	notes: string;
 }
 
@@ -54,36 +66,79 @@ const SECTION_LABELS: Record<Section, { label: string; icon: string; badge: stri
 	congregante: { label: 'Congregantes', icon: 'people', badge: 'bg-surface-container text-on-surface-variant' },
 };
 
-const STATUS_STYLES: Record<AttStatus, { row: string; radio: string; label: string }> = {
-	present: { row: 'bg-tertiary-fixed/20 border-tertiary-fixed', radio: 'accent-[#002d37]', label: 'Presente' },
-	absent: { row: 'bg-error-container/20 border-error/30', radio: 'accent-[#ba1a1a]', label: 'Ausente' },
-	excused: { row: 'bg-secondary-container/20 border-secondary-container', radio: 'accent-[#735c00]', label: 'Justificado' },
+// Ausente es el estado por defecto: neutro visualmente para no alarmar.
+// Presente y Justificado tiñen la fila como confirmación positiva del registro.
+const STATUS_CONFIG: Record<
+	AttStatus,
+	{ label: string; short: string; icon: string; active: string; rowTint: string }
+> = {
+	present: {
+		label: 'Presente',
+		short: 'Presente',
+		icon: 'check_circle',
+		active: 'bg-tertiary-container text-on-tertiary-container',
+		rowTint: 'bg-tertiary-fixed/15',
+	},
+	absent: {
+		label: 'Ausente',
+		short: 'Ausente',
+		icon: 'cancel',
+		active: 'bg-error-container text-error',
+		rowTint: 'bg-white',
+	},
+	excused: {
+		label: 'Justificado',
+		short: 'Justif.',
+		icon: 'event_busy',
+		active: 'bg-secondary-container text-on-secondary-container',
+		rowTint: 'bg-secondary-container/15',
+	},
 };
+
+const STATUS_ORDER: AttStatus[] = ['present', 'absent', 'excused'];
 
 const MINISTRIES_LIST = ['EsLider','Oración','Caballeros','Damas','Jóvenes','Adolescentes','Niños','Mayordomía','Servicio Social','Evangelismo','GDC Jóvenes','GDC Adolescentes','Campo Víctor Raúl','Campo Alto Trujillo','Campo Pampas de San Juan'];
 
 const emptyVisit: VisitForm = { name: '', phone: '', email: '', invitedBy: '', ministryInterest: '', notes: '' };
+
+const emptyConvert: ConvertForm = { fullName: '', age: '', phone: '', address: '', notes: '' };
 
 export default function AsistenciaPage() {
 	const today = new Date();
 	const dow = today.getDay();
 	const suggestion = DAY_SCHEDULE[dow] ?? DAY_SCHEDULE[1];
 
-	const [attendance, setAttendance] = useState<Record<string, AttStatus>>({
-		'1': 'present', '2': 'present', '3': 'absent', '4': 'excused', '5': 'present', '6': 'present', '7': 'absent', '8': 'present',
-	});
+	// Todos arrancan como 'ausente' por defecto; el líder confirma presente/justificado.
+	const [attendance, setAttendance] = useState<Record<string, AttStatus>>({});
 	const [selectedEvent, setSelectedEvent] = useState(suggestion.event);
 	const [search, setSearch] = useState('');
+	const { visitas, addVisita } = useVisitas();
 	const [isVisitModal, setIsVisitModal] = useState(false);
 	const [visitForm, setVisitForm] = useState<VisitForm>(emptyVisit);
-	const [visits, setVisits] = useState<VisitForm[]>([]);
+	const [lastVisitId, setLastVisitId] = useState<string | null>(null);
+
+	const { convertidos, addConvertido } = useConvertidos();
+	const [isConvModal, setIsConvModal] = useState(false);
+	const [convForm, setConvForm] = useState<ConvertForm>(emptyConvert);
+	const [lastConvId, setLastConvId] = useState<string | null>(null);
+	// Registros de hoy desde los stores (para mostrarlos al pie de la lista).
+	const todayIso = today.toISOString().slice(0, 10);
+	const convertidosToday = convertidos.filter((c) => c.dateRegistered === todayIso);
+	const visitasToday = visitas.filter((v) => v.dateRegistered === todayIso);
+
+	const statusOf = (id: string): AttStatus => attendance[id] ?? 'absent';
 
 	const setStatus = (id: string, s: AttStatus) =>
 		setAttendance((prev) => ({ ...prev, [id]: s }));
 
-	const presentCount = Object.values(attendance).filter((s) => s === 'present').length;
+	const markAllPresent = () =>
+		setAttendance(Object.fromEntries(ROSTER.map((m) => [m.id, 'present' as AttStatus])));
+
 	const total = ROSTER.length;
-	const rate = Math.round((presentCount / total) * 100);
+	const presentCount = ROSTER.filter((m) => statusOf(m.id) === 'present').length;
+	const excusedCount = ROSTER.filter((m) => statusOf(m.id) === 'excused').length;
+	const absentCount = total - presentCount - excusedCount;
+	const rate = total ? Math.round((presentCount / total) * 100) : 0;
 
 	const filtered = ROSTER.filter(
 		(m) =>
@@ -95,15 +150,38 @@ export default function AsistenciaPage() {
 	const bySection = (s: Section) => filtered.filter((m) => m.section === s);
 
 	const saveVisit = () => {
-		if (!visitForm.name) return;
-		setVisits((v) => [...v, visitForm]);
+		if (!visitForm.name.trim()) return;
+		const nueva = addVisita({
+			fullName: visitForm.name,
+			phone: visitForm.phone,
+			email: visitForm.email,
+			invitedBy: visitForm.invitedBy,
+			ministryInterest: visitForm.ministryInterest,
+			notes: visitForm.notes,
+		});
+		setLastVisitId(nueva.id);
 		setVisitForm(emptyVisit);
 		setIsVisitModal(false);
 	};
 
+	const saveConvert = () => {
+		if (!convForm.fullName.trim()) return;
+		const parsedAge = parseInt(convForm.age, 10);
+		const nuevo = addConvertido({
+			fullName: convForm.fullName,
+			age: Number.isNaN(parsedAge) ? null : parsedAge,
+			phone: convForm.phone,
+			address: convForm.address,
+			notes: convForm.notes,
+		});
+		setLastConvId(nuevo.id);
+		setConvForm(emptyConvert);
+		setIsConvModal(false);
+	};
+
 	return (
 		<main className='flex-1 flex flex-col min-h-full'>
-			<div className='flex-1 p-4 md:p-margin-desktop w-full max-w-container-max mx-auto'>
+			<div className='flex-1 p-4 md:p-margin-desktop pb-28 md:pb-margin-desktop w-full max-w-container-max mx-auto'>
 				{/* Day auto-suggestion banner */}
 				<div className={`mb-5 flex flex-wrap items-center gap-3 px-4 py-3 rounded-xl border border-outline-variant/50 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.04)]`}>
 					<span className='material-symbols-outlined text-on-surface-variant'>event_available</span>
@@ -120,10 +198,10 @@ export default function AsistenciaPage() {
 				{/* Controls */}
 				<div className='grid grid-cols-1 lg:grid-cols-12 gap-5 mb-6'>
 					{/* Event selector */}
-					<div className='col-span-1 lg:col-span-8 bg-white rounded-xl p-5 shadow-[0_4px_20px_rgba(0,0,0,0.04)] border border-outline-variant flex flex-col md:flex-row gap-4 items-end'>
-						<div className='flex-1 flex flex-col gap-1.5'>
+					<div className='col-span-1 lg:col-span-8 bg-white rounded-xl p-5 shadow-[0_4px_20px_rgba(0,0,0,0.04)] border border-outline-variant flex flex-col md:flex-row gap-4 md:items-end'>
+						<div className='flex-1 flex flex-col gap-1.5 w-full'>
 							<label className='font-label-sm text-label-sm text-on-surface-variant'>Evento / Ministerio</label>
-							<select value={selectedEvent} onChange={(e) => setSelectedEvent(e.target.value)} className='bg-surface-container-low border border-outline-variant rounded-lg px-4 py-2.5 font-body-md text-on-surface focus:ring-primary focus:border-primary outline-none'>
+							<select value={selectedEvent} onChange={(e) => setSelectedEvent(e.target.value)} className='w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-2.5 font-body-md text-on-surface focus:ring-primary focus:border-primary outline-none'>
 								<option>Culto EsLider</option>
 								<option>Ministerio de Oración</option>
 								<option>Culto Caballeros</option>
@@ -144,28 +222,41 @@ export default function AsistenciaPage() {
 								<option>Campo Pampas de San Juan</option>
 							</select>
 						</div>
-						<div className='flex flex-col gap-1.5'>
+						<div className='flex flex-col gap-1.5 w-full md:w-auto'>
 							<label className='font-label-sm text-label-sm text-on-surface-variant'>Fecha</label>
-							<input type='date' defaultValue={today.toISOString().slice(0, 10)} className='bg-surface-container-low border border-outline-variant rounded-lg px-4 py-2.5 font-body-md text-on-surface focus:ring-primary focus:border-primary outline-none' />
+							<input type='date' defaultValue={today.toISOString().slice(0, 10)} className='w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-2.5 font-body-md text-on-surface focus:ring-primary focus:border-primary outline-none' />
 						</div>
-						<button className='bg-primary text-on-primary px-6 py-2.5 rounded-lg font-label-md text-label-md hover:opacity-90 transition-[opacity] shadow-sm shrink-0'>
+						<button className='w-full md:w-auto bg-primary text-on-primary px-6 py-2.5 min-h-[44px] rounded-lg font-label-md text-label-md hover:opacity-90 transition-[opacity] shadow-sm shrink-0'>
 							Cargar Lista
 						</button>
 					</div>
 
 					{/* Stats */}
 					<div className='col-span-1 lg:col-span-4 bg-white rounded-xl p-5 shadow-[0_4px_20px_rgba(0,0,0,0.04)] border border-outline-variant'>
-						<div className='flex justify-between items-center py-2 border-b border-surface-variant'>
-							<span className='font-label-md text-label-md text-on-surface-variant'>Total Presentes</span>
-							<span className='font-headline-lg text-primary'>{presentCount}</span>
+						<div className='flex items-center justify-between pb-3 border-b border-surface-variant'>
+							<div>
+								<p className='font-label-sm text-label-sm text-on-surface-variant'>Tasa de asistencia</p>
+								<p className='font-body-sm text-body-sm text-on-surface-variant text-[11px]'>{presentCount} de {total} presentes</p>
+							</div>
+							<span className={`font-headline-lg ${rate >= 70 ? 'text-tertiary' : rate >= 50 ? 'text-secondary' : 'text-error'}`}>{rate}%</span>
 						</div>
-						<div className='flex justify-between items-center py-2 border-b border-surface-variant'>
-							<span className='font-label-md text-label-md text-on-surface-variant'>Tasa de Asistencia</span>
-							<span className={`font-headline-md ${rate >= 70 ? 'text-tertiary' : rate >= 50 ? 'text-secondary' : 'text-error'}`}>{rate}%</span>
+						<div className='grid grid-cols-3 gap-2 pt-3'>
+							<div className='flex flex-col items-center gap-0.5 rounded-lg bg-tertiary-fixed/20 py-2'>
+								<span className='font-headline-md text-tertiary'>{presentCount}</span>
+								<span className='font-label-sm text-label-sm text-on-surface-variant'>Presentes</span>
+							</div>
+							<div className='flex flex-col items-center gap-0.5 rounded-lg bg-secondary-container/25 py-2'>
+								<span className='font-headline-md text-secondary'>{excusedCount}</span>
+								<span className='font-label-sm text-label-sm text-on-surface-variant'>Justif.</span>
+							</div>
+							<div className='flex flex-col items-center gap-0.5 rounded-lg bg-error-container/25 py-2'>
+								<span className='font-headline-md text-error'>{absentCount}</span>
+								<span className='font-label-sm text-label-sm text-on-surface-variant'>Ausentes</span>
+							</div>
 						</div>
-						<div className='flex justify-between items-center pt-2'>
-							<span className='font-label-md text-label-md text-on-surface-variant'>Visitantes Hoy</span>
-							<span className='font-headline-md text-on-surface'>{visits.length}</span>
+						<div className='flex justify-between items-center pt-3 mt-1 border-t border-surface-variant'>
+							<span className='font-label-sm text-label-sm text-on-surface-variant'>Visitantes hoy</span>
+							<span className='font-headline-md text-on-surface'>{visitasToday.length}</span>
 						</div>
 					</div>
 				</div>
@@ -173,19 +264,29 @@ export default function AsistenciaPage() {
 				{/* Roster */}
 				<div className='bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.04)] border border-outline-variant overflow-hidden'>
 					{/* Toolbar */}
-					<div className='p-4 border-b border-outline-variant bg-surface-bright flex flex-wrap justify-between items-center gap-3'>
-						<div className='relative'>
+					<div className='p-4 border-b border-outline-variant bg-surface-bright flex flex-col sm:flex-row sm:flex-wrap sm:justify-between sm:items-center gap-3'>
+						<div className='relative w-full sm:w-64'>
 							<span className='material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]'>search</span>
-							<input type='text' value={search} onChange={(e) => setSearch(e.target.value)} placeholder='Buscar por nombre o ministerio...' className='pl-10 pr-4 py-2 bg-surface border border-outline-variant rounded-lg font-body-sm focus:ring-primary focus:border-primary outline-none transition-[box-shadow] w-64' />
+							<input type='text' value={search} onChange={(e) => setSearch(e.target.value)} placeholder='Buscar por nombre o ministerio...' className='w-full pl-10 pr-4 py-2.5 bg-surface border border-outline-variant rounded-lg font-body-sm focus:ring-primary focus:border-primary outline-none transition-[box-shadow]' />
 						</div>
-						<div className='flex items-center gap-2'>
-							<button className='flex items-center gap-2 px-4 py-2 border border-primary text-primary rounded-lg font-label-md text-label-md hover:bg-primary-container/20 transition-[background-color]'>
-								<span className='material-symbols-outlined text-[18px]'>diversity_3</span>
-								Por Ministerio
+						<div className='grid grid-cols-2 sm:flex sm:items-center gap-2'>
+							<button onClick={markAllPresent} className='flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] border border-tertiary text-tertiary rounded-lg font-label-md text-label-md hover:bg-tertiary-container/20 transition-[background-color]'>
+								<span className='material-symbols-outlined text-[18px]'>done_all</span>
+								<span className='hidden sm:inline'>Todos presentes</span>
+								<span className='sm:hidden'>Presentes</span>
 							</button>
-							<button onClick={() => setIsVisitModal(true)} className='flex items-center gap-2 px-4 py-2 bg-secondary-container text-on-secondary-container rounded-lg font-label-md text-label-md hover:opacity-90 transition-[opacity]'>
+							<button className='flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] border border-primary text-primary rounded-lg font-label-md text-label-md hover:bg-primary-container/20 transition-[background-color]'>
+								<span className='material-symbols-outlined text-[18px]'>diversity_3</span>
+								<span className='hidden sm:inline'>Por Ministerio</span>
+								<span className='sm:hidden'>Ministerio</span>
+							</button>
+							<button onClick={() => setIsVisitModal(true)} className='flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] bg-secondary-container text-on-secondary-container rounded-lg font-label-md text-label-md hover:opacity-90 transition-[opacity]'>
 								<span className='material-symbols-outlined text-[18px]' style={{ fontVariationSettings: "'FILL' 1" }}>person_add</span>
 								Agregar Visita
+							</button>
+							<button onClick={() => setIsConvModal(true)} className='flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] bg-tertiary-container text-on-tertiary-container rounded-lg font-label-md text-label-md hover:opacity-90 transition-[opacity]'>
+								<span className='material-symbols-outlined text-[18px]' style={{ fontVariationSettings: "'FILL' 1" }}>volunteer_activism</span>
+								Nuevo Convertido
 							</button>
 						</div>
 					</div>
@@ -205,30 +306,48 @@ export default function AsistenciaPage() {
 								</div>
 								{/* Members */}
 								{members.map((member) => {
-									const status = attendance[member.id] ?? 'present';
-									const ss = STATUS_STYLES[status];
+									const status = statusOf(member.id);
+									const config = STATUS_CONFIG[status];
 									return (
 										<div
 											key={member.id}
-											className={`flex flex-wrap items-center gap-4 px-5 py-3 border-b border-outline-variant/20 transition-[background-color] ${status !== 'absent' ? 'bg-white' : 'bg-surface-bright'}`}
+											className={`flex flex-col sm:flex-row sm:items-center gap-3 px-4 sm:px-5 py-3 border-b border-outline-variant/20 transition-[background-color] ${config.rowTint}`}
 										>
 											<div className='flex items-center gap-3 flex-1 min-w-0'>
-												<div className={`w-9 h-9 rounded-full flex items-center justify-center font-label-md text-label-md select-none shrink-0 ${member.bg}`}>
+												<div className={`w-10 h-10 rounded-full flex items-center justify-center font-label-md text-label-md select-none shrink-0 ${member.bg}`}>
 													{member.initials}
 												</div>
-												<div className='min-w-0'>
+												<div className='min-w-0 flex-1'>
 													<p className='font-label-md text-label-md text-on-surface truncate'>{member.name}</p>
 													<p className='font-body-sm text-body-sm text-on-surface-variant text-[11px]'>{member.role} · {member.ministry}</p>
 												</div>
 											</div>
-											<div className='flex gap-2 shrink-0'>
-												{(['present', 'absent', 'excused'] as AttStatus[]).map((s) => {
+											{/* Control segmentado táctil: mismo comportamiento en móvil y desktop */}
+											<div className='flex gap-1 p-1 rounded-lg bg-surface-container-low w-full sm:w-auto shrink-0'>
+												{STATUS_ORDER.map((s) => {
+													const sc = STATUS_CONFIG[s];
 													const isSelected = status === s;
 													return (
-														<label key={s} className={`flex items-center gap-1.5 cursor-pointer px-3 py-1.5 rounded-lg border transition-[background-color,border-color] ${isSelected ? ss.row : 'border-outline-variant hover:bg-surface-container'}`}>
-															<input type='radio' name={`att_${member.id}`} value={s} checked={isSelected} onChange={() => setStatus(member.id, s)} className={ss.radio} />
-															<span className={`font-label-sm text-label-sm ${isSelected && s === 'absent' ? 'text-error' : ''}`}>{STATUS_STYLES[s].label}</span>
-														</label>
+														<button
+															key={s}
+															type='button'
+															aria-pressed={isSelected}
+															aria-label={`Marcar ${member.name} como ${sc.label}`}
+															onClick={() => setStatus(member.id, s)}
+															className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] rounded-md font-label-sm text-label-sm transition-[background-color,color] ${
+																isSelected
+																	? sc.active
+																	: 'text-on-surface-variant hover:bg-surface-container'
+															}`}
+														>
+															<span
+																className='material-symbols-outlined text-[18px]'
+																style={isSelected ? { fontVariationSettings: "'FILL' 1" } : undefined}
+															>
+																{sc.icon}
+															</span>
+															<span>{sc.short}</span>
+														</button>
 													);
 												})}
 											</div>
@@ -242,40 +361,77 @@ export default function AsistenciaPage() {
 						);
 					})}
 
-					{/* Visits recorded today */}
-					{visits.length > 0 && (
+					{/* Visitas registradas hoy */}
+					{visitasToday.length > 0 && (
 						<div>
 							<div className='px-5 py-2 flex items-center gap-2 bg-secondary-container/20 border-y border-secondary-container/30'>
 								<span className='material-symbols-outlined text-[16px] text-secondary'>star</span>
-								<span className='font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider'>Visitas Registradas Hoy</span>
-								<span className='ml-auto px-2 py-0.5 rounded-full font-label-sm text-label-sm bg-secondary-container text-on-secondary-container'>{visits.length}</span>
+								<span className='font-label-sm text-label-sm text-on-surface-variant'>Visitas registradas hoy</span>
+								<span className='ml-auto px-2 py-0.5 rounded-full font-label-sm text-label-sm bg-secondary-container text-on-secondary-container'>{visitasToday.length}</span>
 							</div>
-							{visits.map((v, i) => (
-								<div key={i} className='flex items-center gap-3 px-5 py-3 border-b border-outline-variant/20 bg-secondary-container/5'>
+							{visitasToday.map((v) => (
+								<Link
+									key={v.id}
+									href={`/visitas/${v.id}`}
+									className={`flex items-center gap-3 px-5 py-3 border-b border-outline-variant/20 hover:bg-secondary-container/10 transition-[background-color] ${v.id === lastVisitId ? 'bg-secondary-container/15' : 'bg-secondary-container/5'}`}
+								>
 									<div className='w-9 h-9 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-label-md text-label-md select-none shrink-0'>
-										{v.name.slice(0, 2).toUpperCase()}
+										{v.fullName.slice(0, 2).toUpperCase()}
 									</div>
-									<div>
-										<p className='font-label-md text-label-md text-on-surface'>{v.name}</p>
-										<p className='font-body-sm text-body-sm text-on-surface-variant text-[11px]'>{v.phone || 'Sin teléfono'} {v.ministryInterest ? `· Interés: ${v.ministryInterest}` : ''}</p>
+									<div className='min-w-0'>
+										<p className='font-label-md text-label-md text-on-surface truncate'>{v.fullName}</p>
+										<p className='font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate'>{v.phone || 'Sin teléfono'} {v.ministryInterest ? `· Interés: ${v.ministryInterest}` : ''}</p>
 									</div>
-									<span className='ml-auto px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm text-[10px] uppercase'>Visita</span>
-								</div>
+									<span className='ml-auto flex items-center gap-1 text-secondary font-label-sm text-label-sm'>
+										Ver
+										<span className='material-symbols-outlined text-[16px]'>chevron_right</span>
+									</span>
+								</Link>
+							))}
+						</div>
+					)}
+
+					{/* Nuevos convertidos registrados hoy */}
+					{convertidosToday.length > 0 && (
+						<div>
+							<div className='px-5 py-2 flex items-center gap-2 bg-tertiary-container/20 border-y border-tertiary-container/30'>
+								<span className='material-symbols-outlined text-[16px] text-tertiary'>volunteer_activism</span>
+								<span className='font-label-sm text-label-sm text-on-surface-variant'>Nuevos convertidos hoy</span>
+								<span className='ml-auto px-2 py-0.5 rounded-full font-label-sm text-label-sm bg-tertiary-container text-on-tertiary-container'>{convertidosToday.length}</span>
+							</div>
+							{convertidosToday.map((c) => (
+								<Link
+									key={c.id}
+									href={`/convertidos/${c.id}`}
+									className={`flex items-center gap-3 px-5 py-3 border-b border-outline-variant/20 hover:bg-tertiary-container/10 transition-[background-color] ${c.id === lastConvId ? 'bg-tertiary-container/15' : 'bg-tertiary-container/5'}`}
+								>
+									<div className='w-9 h-9 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-label-md text-label-md select-none shrink-0'>
+										{c.fullName.slice(0, 2).toUpperCase()}
+									</div>
+									<div className='min-w-0'>
+										<p className='font-label-md text-label-md text-on-surface truncate'>{c.fullName}</p>
+										<p className='font-body-sm text-body-sm text-on-surface-variant text-[11px]'>{c.phone || 'Sin teléfono'}{c.age ? ` · ${c.age} años` : ''}</p>
+									</div>
+									<span className='ml-auto flex items-center gap-1 text-tertiary font-label-sm text-label-sm'>
+										Ver
+										<span className='material-symbols-outlined text-[16px]'>chevron_right</span>
+									</span>
+								</Link>
 							))}
 						</div>
 					)}
 
 					{/* Footer */}
-					<div className='p-4 border-t border-outline-variant flex justify-between items-center bg-surface-bright'>
-						<span className='font-body-sm text-body-sm text-on-surface-variant'>
-							Mostrando {filtered.length} de {ROSTER.length} asistentes + {visits.length} visitas
+					<div className='p-4 border-t border-outline-variant flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-surface-bright'>
+						<span className='font-body-sm text-body-sm text-on-surface-variant text-center sm:text-left'>
+							Mostrando {filtered.length} de {ROSTER.length} asistentes + {visitasToday.length} visitas
 						</span>
-						<div className='flex gap-2'>
-							<button className='px-4 py-2 border border-primary text-primary rounded-lg font-label-md text-label-md hover:bg-primary-container/20 transition-[background-color] flex items-center gap-2'>
+						<div className='grid grid-cols-1 sm:flex gap-2'>
+							<button className='px-4 py-2.5 min-h-[44px] border border-primary text-primary rounded-lg font-label-md text-label-md hover:bg-primary-container/20 transition-[background-color] flex items-center justify-center gap-2'>
 								<span className='material-symbols-outlined text-[18px]'>download</span>
 								Exportar Lista
 							</button>
-							<button className='px-4 py-2 bg-primary text-on-primary rounded-lg font-label-md text-label-md hover:opacity-90 transition-[opacity] shadow-sm'>
+							<button className='px-4 py-2.5 min-h-[44px] bg-primary text-on-primary rounded-lg font-label-md text-label-md hover:opacity-90 transition-[opacity] shadow-sm'>
 								Guardar Asistencia
 							</button>
 						</div>
@@ -283,10 +439,26 @@ export default function AsistenciaPage() {
 				</div>
 			</div>
 
+			{/* Barra de confirmación flotante — solo móvil, sobre la navegación inferior */}
+			<div className='md:hidden fixed bottom-16 left-0 right-0 z-40 flex items-center gap-3 px-4 py-3 bg-surface border-t border-outline-variant shadow-[0_-4px_20px_rgba(0,0,0,0.08)]'>
+				<div className='flex-1 min-w-0'>
+					<p className='font-label-md text-label-md text-on-surface'>
+						{presentCount} presentes · {rate}%
+					</p>
+					<p className='font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate'>
+						{excusedCount} justif. · {absentCount} ausentes de {total}
+					</p>
+				</div>
+				<button className='shrink-0 flex items-center gap-2 px-5 py-2.5 min-h-[44px] bg-primary text-on-primary rounded-full font-label-md text-label-md hover:opacity-90 transition-[opacity]'>
+					<span className='material-symbols-outlined text-[18px]'>save</span>
+					Guardar
+				</button>
+			</div>
+
 			{/* Agregar Visita Modal */}
 			{isVisitModal && (
 				<div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4' onClick={(e) => e.target === e.currentTarget && setIsVisitModal(false)}>
-					<div className='bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] w-full max-w-md flex flex-col overflow-hidden'>
+					<div className='bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden'>
 						<div className='flex items-center justify-between p-5 border-b border-outline-variant bg-secondary-container/10'>
 							<div>
 								<h2 className='font-headline-md text-on-surface'>Registrar Visita</h2>
@@ -336,6 +508,60 @@ export default function AsistenciaPage() {
 							</button>
 							<button onClick={saveVisit} className='px-5 py-2 rounded-lg font-label-md text-label-md bg-secondary-container text-on-secondary-container hover:opacity-90 transition-[opacity] shadow-sm'>
 								Registrar Visita
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Nuevo Convertido Modal */}
+			{isConvModal && (
+				<div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4' onClick={(e) => e.target === e.currentTarget && setIsConvModal(false)}>
+					<div className='bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden'>
+						<div className='flex items-center justify-between p-5 border-b border-outline-variant bg-tertiary-container/15'>
+							<div className='flex items-center gap-3'>
+								<div className='w-10 h-10 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center shrink-0'>
+									<span className='material-symbols-outlined' style={{ fontVariationSettings: "'FILL' 1" }}>volunteer_activism</span>
+								</div>
+								<div>
+									<h2 className='font-headline-md text-on-surface'>Nuevo Convertido</h2>
+									<p className='font-body-sm text-body-sm text-on-surface-variant'>Pasa al proceso de consolidación.</p>
+								</div>
+							</div>
+							<button onClick={() => setIsConvModal(false)} className='p-2 rounded-full hover:bg-surface-container transition-[background-color] text-on-surface-variant'>
+								<span className='material-symbols-outlined'>close</span>
+							</button>
+						</div>
+						<div className='p-5 overflow-y-auto space-y-4'>
+							<div>
+								<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Nombre Completo *</label>
+								<input type='text' value={convForm.fullName} onChange={(e) => setConvForm((f) => ({ ...f, fullName: e.target.value }))} placeholder='Nombres y apellidos' className='w-full px-3 py-2.5 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+							</div>
+							<div className='grid grid-cols-2 gap-3'>
+								<div>
+									<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Edad</label>
+									<input type='number' min={0} inputMode='numeric' value={convForm.age} onChange={(e) => setConvForm((f) => ({ ...f, age: e.target.value }))} placeholder='Ej. 28' className='w-full px-3 py-2.5 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+								</div>
+								<div>
+									<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Teléfono</label>
+									<input type='tel' inputMode='tel' value={convForm.phone} onChange={(e) => setConvForm((f) => ({ ...f, phone: e.target.value }))} placeholder='999 000 000' className='w-full px-3 py-2.5 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+								</div>
+							</div>
+							<div>
+								<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Dirección</label>
+								<input type='text' value={convForm.address} onChange={(e) => setConvForm((f) => ({ ...f, address: e.target.value }))} placeholder='Calle, número, sector' className='w-full px-3 py-2.5 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-[box-shadow]' />
+							</div>
+							<div>
+								<label className='block font-label-sm text-label-sm text-on-surface-variant mb-1'>Notas sobre la persona</label>
+								<textarea rows={3} value={convForm.notes} onChange={(e) => setConvForm((f) => ({ ...f, notes: e.target.value }))} placeholder='Cómo llegó, quién la invitó, situación, intereses...' className='w-full px-3 py-2.5 border border-outline-variant rounded-lg bg-surface-lowest text-on-surface font-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none transition-[box-shadow]' />
+							</div>
+						</div>
+						<div className='p-5 border-t border-outline-variant bg-surface-bright flex justify-end gap-3'>
+							<button onClick={() => setIsConvModal(false)} className='px-5 py-2 rounded-lg font-label-md text-label-md text-on-surface border border-outline-variant hover:bg-surface-container transition-[background-color]'>
+								Cancelar
+							</button>
+							<button onClick={saveConvert} disabled={!convForm.fullName.trim()} className='px-5 py-2 rounded-lg font-label-md text-label-md bg-tertiary text-on-tertiary hover:opacity-90 transition-[opacity] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed'>
+								Registrar Convertido
 							</button>
 						</div>
 					</div>

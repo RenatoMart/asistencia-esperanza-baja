@@ -1,5 +1,8 @@
 import Link from 'next/link';
 
+import NuevosConvertidosPanel from '@/components/dashboard/NuevosConvertidosPanel';
+import VisitasPanel from '@/components/dashboard/VisitasPanel';
+
 const ministryCards = [
 	{
 		name: 'Caballeros',
@@ -212,6 +215,11 @@ export default function DashboardPage() {
 									</div>
 								</div>
 							))}
+						</div>
+
+						<div className='grid grid-cols-1 xl:grid-cols-2 gap-6'>
+							<NuevosConvertidosPanel />
+							<VisitasPanel />
 						</div>
 					</div>
 
