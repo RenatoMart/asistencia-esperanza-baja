@@ -7,6 +7,13 @@
 	user-select: none;
 	font-size: 24px;
 	line-height: 1;
+	/* Reserva el cuadro del icono para que el texto del ligature no desplace
+	   el layout mientras la fuente carga. */
+	display: inline-block;
+	width: 1em;
+	height: 1em;
+	overflow: hidden;
+	flex-shrink: 0;
 }
 
 ::-webkit-scrollbar {

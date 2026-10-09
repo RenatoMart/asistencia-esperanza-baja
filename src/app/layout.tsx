@@ -29,7 +29,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 				<link rel='preconnect' href='https://fonts.gstatic.com' crossOrigin='' />
 				<link
 					rel='stylesheet'
-					href='https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap'
+					href='https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=add,arrow_back,arrow_drop_down,assignment_late,auto_stories,cake,calendar_month,calendar_today,call,campaign,cancel,celebration,chat,check,check_circle,chevron_left,chevron_right,child_care,church,close,dashboard,delete,diversity_3,done_all,download,edit,edit_calendar,engineering,event,event_available,event_busy,expand_more,face_3,favorite,forum,group,group_off,groups,handshake,help,history_edu,home,how_to_reg,local_fire_department,mail,man,menu,more_vert,notifications,notifications_active,people,person_add,person_alert,person_off,person_pin,person_search,save,savings,schedule,school,search,search_off,settings,star,sticky_note_2,travel_explore,trending_up,volunteer_activism,water_drop,waving_hand,woman&display=block'
 				/>
 			</head>
 			<body className='antialiased'>{children}</body>
